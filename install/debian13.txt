@@ -1,0 +1,4 @@
+wget https://librescrs.github.io/packages/librescrs-archive-keyring-trixie.deb
+sudo apt install ./librescrs-archive-keyring-trixie.deb
+sudo apt update
+sudo apt install librecelik

@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# What a tag of this repository publishes as release assets. One glob per
+# line, then the one-line description the downloads page renders.
+#
+# This file is the single place that answers "what do we publish". One script
+# holds it true, three times: --wired proves the release workflow calls it at
+# all; --staged compares this list against the files actually staged, in the
+# step before `gh release create`; --published <tag> compares it against the
+# release that exists. Changing what the workflow publishes without changing
+# this file fails the release before it is created.
+*.debian13.deb        the repository's signing key and APT source, built for Debian 13
+*.ubuntu2604.deb      the repository's signing key and APT source, built for Ubuntu 26.04 LTS
+*.fedora43.rpm        the repository's signing key and dnf definition, built for Fedora 43
+*.fedora44.rpm        the repository's signing key and dnf definition, built for Fedora 44
+*.opensusetw.rpm      the repository's signing key and zypper definition, built for openSUSE Tumbleweed
+KEYS                  the OpenPGP key that signs LibreSCRS release tags, and certifies the package-signing key
+SHA256SUMS            checksums over every other asset in this release
+*.sigstore.json       cosign keyless signature bundle, one per asset

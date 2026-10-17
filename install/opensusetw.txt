@@ -1,0 +1,5 @@
+curl -fLO https://librescrs.github.io/packages/KEY.asc
+gpg --show-keys --with-fingerprint KEY.asc
+sudo rpm --import KEY.asc
+sudo zypper install https://librescrs.github.io/packages/librescrs-release-opensusetw.noarch.rpm
+sudo zypper install librecelik

@@ -1,0 +1,38 @@
+#!/usr/bin/make -f
+
+# One recipe, two distributions: the suite is the codename of the image the
+# package is built in, so the Debian 13 build names trixie and the Ubuntu
+# 26.04 build names resolute. Any other image is refused rather than guessed.
+CODENAME := $(shell . /etc/os-release && echo "$$VERSION_CODENAME")
+
+# The certificate is not committed. The release workflow places the one for
+# its mode at packaging/keyring-cert.asc before the build -- the public
+# rehearsal key in a rehearsal, the package-signing key on a tag -- so this
+# recipe names no fingerprint and builds either.
+CERT := packaging/keyring-cert.asc
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	case "$(CODENAME)" in trixie|resolute) ;; \
+	  *) echo "debian/rules: no LibreSCRS suite for codename '$(CODENAME)'" >&2; exit 1 ;; esac
+	sed 's/@CODENAME@/$(CODENAME)/' debian/librescrs.sources.in >debian/librescrs.sources
+	# Signed-By names a .pgp file, which apt reads as a binary keyring: the
+	# armor is taken off here, and nothing else about the certificate changes.
+	# Exactly one public key block; a secret key is never an input.
+	test -s $(CERT)
+	! grep -q 'PRIVATE KEY BLOCK' $(CERT)
+	test "$$(grep -c '^-----BEGIN PGP PUBLIC KEY BLOCK-----$$' $(CERT))" = 1
+	sed -n '/^-----BEGIN PGP PUBLIC KEY BLOCK-----$$/,/^-----END PGP PUBLIC KEY BLOCK-----$$/p' $(CERT) \
+	  | sed '1,/^[[:space:]]*$$/d' | grep -v -e '^=' -e '^-----END ' | base64 -d >debian/librescrs-archive-keyring.pgp
+	# The first packet is a public key (old format tag 6, or new format).
+	case "$$(od -An -tx1 -N1 debian/librescrs-archive-keyring.pgp | tr -d ' ')" in 98|99|9a|c6) ;; \
+	  *) echo "debian/rules: $(CERT) does not start with a public key" >&2; exit 1 ;; esac
+
+# Nothing to test: the files are checked above, and the repository's probe
+# installs the package as a user would before it reaches anyone.
+override_dh_auto_test:
+
+override_dh_missing:
+	dh_missing --fail-missing

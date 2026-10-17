@@ -1,0 +1,4 @@
+curl -fLO https://librescrs.github.io/packages/KEYS
+gpg --show-keys --with-fingerprint KEYS
+gpg --import KEYS
+yay -S librecelik

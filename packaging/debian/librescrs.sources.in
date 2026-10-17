@@ -1,0 +1,6 @@
+Types: deb
+URIs: https://librescrs.github.io/packages/deb
+Suites: @CODENAME@
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/librescrs-archive-keyring.pgp

@@ -1,0 +1,231 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+name: Release
+
+# preflight -> keyring packages -> sign -> seal -> publish.
+#
+# A tag push publishes. Everything else rehearses: a manual dispatch (any ref),
+# and a push to main or a ci/ branch that touches what the packages are built
+# from -- the one path to the packages, so a change to them is built and judged
+# before it lands. A rehearsal builds the keyring packages around the public
+# rehearsal certificate and signs with the public rehearsal key, uploads
+# nothing to a transparency log, and keeps the asset set as a workflow artefact
+# instead of publishing it. `publish` on a ref that is not a tag is refused in
+# the first step. The shared steps live in LibreSCRS/ci, pinned by commit
+# below.
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+*']
+    # Path filters are not applied to tag pushes; they choose which branch
+    # pushes rehearse.
+    branches: [main, 'ci/**']
+    paths:
+      - 'packaging/**'
+      - 'VERSION'
+      - 'CHANGELOG.md'
+      - 'KEYS'
+      - 'ci/release-assets.txt'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'rehearse (any ref) or publish (a tag ref only)'
+        type: choice
+        options: [rehearse, publish]
+        default: rehearse
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    # Everything a release can be refused for, before anything is built or
+    # signed: the mode against the ref, the tag's signature, and the CHANGELOG
+    # against VERSION. Only the lockstep arm: this repository has its own
+    # version, outside the code repositories' lockstep, and no CMake tree for
+    # the other arms to read.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.pre.outputs.mode }}
+      version: ${{ steps.pre.outputs.version }}
+      is_prerelease: ${{ steps.pre.outputs.is_prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: pre
+        uses: LibreSCRS/ci/actions/release-preflight@b9848b4990ae046072497f10d6f5b2bfdfa45470
+        with:
+          mode: ${{ inputs.mode || (github.ref_type == 'tag' && 'publish' || 'rehearse') }}
+          version-arms: lockstep
+
+  packages:
+    # One keyring package per slug, each built in that distribution's own
+    # image: the APT source names the image's codename, and the RPM release
+    # package carries the dnf or the zypper definition.
+    name: packages (${{ matrix.slug }})
+    needs: [preflight]
+    runs-on: ubuntu-24.04
+    # A minute or two per slug. A wedged container must not hold a release for
+    # six hours and refuse its log while it does.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        slug: [debian13, ubuntu2604, fedora43, fedora44, opensusetw]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: LibreSCRS/ci
+          ref: b9848b4990ae046072497f10d6f5b2bfdfa45470
+          path: .ci
+          persist-credentials: false
+
+      # The certificate the packages carry is the one the run's key set signs
+      # with: the public rehearsal key in a rehearsal, so the publisher's
+      # rehearsal installs them exactly as a user would; the package-signing
+      # key on a tag. It is never committed here and no fingerprint is named,
+      # so the one recipe builds both; the build stages it from this path.
+      - name: Keyring certificate for this mode
+        env:
+          MODE: ${{ needs.preflight.outputs.mode }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            publish) keyset=package-signing ;;
+            rehearse) keyset=rehearsal ;;
+            *) echo "::error::mode '$MODE'"; exit 1 ;;
+          esac
+          cert=".ci/keys/$keyset.asc"
+          [ -s "$cert" ] || { echo "::error::no $cert in the pinned LibreSCRS/ci"; exit 1; }
+          command cp -f "$cert" packaging/keyring-cert.asc
+          echo "keyring certificate: $keyset"
+
+      # No upstream LibreSCRS package: nothing here links against one, so a tag
+      # and a rehearsal build the same way.
+      - name: Build the packages for ${{ matrix.slug }}
+        id: build
+        uses: LibreSCRS/ci/actions/pkg-build@b9848b4990ae046072497f10d6f5b2bfdfa45470
+        with:
+          slug: ${{ matrix.slug }}
+          upstream: source
+
+      # No pkg-verify: a keyring package has no ELF file; the publisher's probe
+      # installs it as a user would before anything reaches a user.
+
+      # Named <package>.<slug>.<deb|rpm> already, debug packages refused: the
+      # asset set is decided by the builder, not by a rename here.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: packages-${{ matrix.slug }}
+          path: ${{ steps.build.outputs.dist }}
+          # An empty upload is how a release publishes an empty SHA256SUMS and
+          # calls it signed.
+          if-no-files-found: error
+          retention-days: 3
+
+  sign:
+    # RPM packages carry their own signature: dnf and zypper check it on every
+    # install from a repository, and a signature added after the checksums would
+    # change the bytes the checksums and the provenance vouch for. The key is in
+    # an environment only a tag can reach; a rehearsal signs with the public
+    # rehearsal key, so the rehearsal runs the same steps.
+    needs: [preflight, packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions: {}
+    environment: ${{ needs.preflight.outputs.mode == 'publish' && 'package-signing' || '' }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: 'packages-*'
+          merge-multiple: true
+          path: signed
+      - uses: LibreSCRS/ci/actions/pkg-sign@b9848b4990ae046072497f10d6f5b2bfdfa45470
+        with:
+          mode: ${{ needs.preflight.outputs.mode }}
+          packages: signed
+          key: ${{ secrets.PACKAGE_SIGNING_KEY }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: signed-packages
+          path: signed/*
+          if-no-files-found: error
+          retention-days: 3
+
+  seal:
+    # No bill of materials: a keyring package bundles no component.
+    needs: [preflight, sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Used on a tag only: keyless signatures and the build provenance.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        # One artifact: the sign job merged the slugs after the builder refused
+        # any name collision, and uploaded the set with the rpms signed.
+        with:
+          name: signed-packages
+          path: artifacts
+
+      - name: Check out the source this release was cut from
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Into a subdirectory, so artifacts/ above is kept.
+          path: _src
+          persist-credentials: false
+
+      - name: The release key, as an asset
+        # The publisher serves KEYS from this repository's newest release, so
+        # it is sealed with the packages rather than read from a branch.
+        run: command cp -f _src/KEYS artifacts/KEYS
+
+      - name: Checksums, signatures and provenance
+        uses: LibreSCRS/ci/actions/release-seal@b9848b4990ae046072497f10d6f5b2bfdfa45470
+        with:
+          mode: ${{ needs.preflight.outputs.mode }}
+          version: ${{ needs.preflight.outputs.version }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sealed
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: [preflight, seal]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: sealed
+          path: artifacts
+      - name: Release notes, the asset set, and the release
+        uses: LibreSCRS/ci/actions/release-publish@b9848b4990ae046072497f10d6f5b2bfdfa45470
+        with:
+          mode: ${{ needs.preflight.outputs.mode }}
+          version: ${{ needs.preflight.outputs.version }}
+          is_prerelease: ${{ needs.preflight.outputs.is_prerelease }}

@@ -1,0 +1,20 @@
+Source: librescrs-archive-keyring
+Section: misc
+Priority: optional
+Maintainer: LibreSCRS <librescrs@proton.me>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.0
+Homepage: https://github.com/LibreSCRS/packages
+Rules-Requires-Root: no
+
+Package: librescrs-archive-keyring
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}
+Description: LibreSCRS package repository: signing key and APT source
+ Installs the certificate that signs the LibreSCRS package repository and the
+ APT source that names it, so LibreCelik and the rest of LibreSCRS install and
+ update with apt.
+ .
+ The certificate is used only for this repository: the source names it in
+ Signed-By, and apt does not trust it for any other.

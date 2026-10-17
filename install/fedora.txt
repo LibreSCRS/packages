@@ -1,0 +1,2 @@
+sudo dnf install https://librescrs.github.io/packages/librescrs-release-fedora.noarch.rpm
+sudo dnf install librecelik

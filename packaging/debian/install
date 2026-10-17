@@ -1,0 +1,2 @@
+debian/librescrs-archive-keyring.pgp usr/share/keyrings/
+debian/librescrs.sources etc/apt/sources.list.d/
