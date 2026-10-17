@@ -31,6 +31,8 @@ name: Publish
 #   LibreSCRS/ci is the fallback, and the owner decides.
 # - The durations of assemble, the probe legs and aur, against the
 #   timeout-minutes below.
+# - The size of the assembled tree (assemble prints it) against the 1 GB
+#   limit of a GitHub Pages site.
 # ------------------------------------------------------------------------------
 on:
   workflow_dispatch:
@@ -48,8 +50,12 @@ on:
 
 permissions: {}
 
+# One group per mode (a schedule is a publish): publishes run one after
+# another, which keeps fetch-prev and deploy of two runs from interleaving; a
+# rehearsal touches neither Pages nor the AUR, so it never waits behind a
+# publish, nor is cancelled by one.
 concurrency:
-  group: publish
+  group: publish-${{ inputs.mode || 'publish' }}
   cancel-in-progress: false
 
 jobs:
@@ -113,7 +119,8 @@ jobs:
 
       - name: No previous generation on a rehearsal
         # The live site is signed with the real index key; a rehearsal tree is
-        # wholly under the rehearsal key and carries nothing over from it.
+        # wholly under the rehearsal key and carries nothing over from it
+        # (pkg-repo refuses fetch-prev on a rehearsal).
         if: steps.m.outputs.mode == 'rehearse'
         run: |
           set -euo pipefail
@@ -132,9 +139,10 @@ jobs:
           tree: pub/tree
 
       - id: p
-        name: Is there a previous generation
+        name: Tree size, and is there a previous generation
         run: |
           set -euo pipefail
+          if [ -d pub/tree ]; then echo "assembled tree: $(du -sh pub/tree | cut -f1) (the Pages site limit is 1 GB)"; fi
           if [ -e pub/prev/EMPTY ]; then
             echo "no previous generation: $(head -n 1 pub/prev/EMPTY)"
             echo "prev=false" >> "$GITHUB_OUTPUT"
@@ -185,7 +193,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions: {}
-    environment: ${{ needs.assemble.outputs.mode == 'publish' && 'index-signing' || '' }}
+    environment: ${{ needs.assemble.outputs.mode == 'publish' && github.ref == 'refs/heads/main' && 'index-signing' || '' }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
@@ -287,6 +295,33 @@ jobs:
         with:
           name: tree-signed
           path: pub/tree
+      - name: Refuse a rollback
+        # apt accepts an older signed InRelease without a word, so a deploy
+        # re-run from an older run ("Re-run failed jobs" while its artifacts
+        # are kept) must never replace a newer generation. Pages caches for
+        # up to 10 minutes, so a deploy within that window can still read
+        # the previous one.
+        env:
+          LIVE: https://librescrs.github.io/packages/deb/dists/trixie/InRelease
+          TREE: pub/tree/deb/dists/trixie/InRelease
+        run: |
+          set -uo pipefail
+          code="$(curl -sS --retry 3 -o live.InRelease -w '%{http_code}' -- "$LIVE")" \
+            || { echo "::error::cannot fetch $LIVE -- cannot judge"; exit 2; }
+          case "$code" in
+            404) echo "nothing published at $LIVE: there is nothing to roll back"; exit 0 ;;
+            200) ;;
+            *) echo "::error::$LIVE is HTTP $code -- cannot judge"; exit 2 ;;
+          esac
+          live="$(sed -n 's/^Date: //p' live.InRelease | head -n 1)"
+          tree="$(sed -n 's/^Date: //p' "$TREE" | head -n 1)"
+          { [ -n "$live" ] && [ -n "$tree" ] && l="$(date -ud "$live" +%s)" && t="$(date -ud "$tree" +%s)"; } \
+            || { echo "::error::no readable Date: (live '$live', this tree '$tree') -- cannot judge"; exit 2; }
+          if [ "$l" -gt "$t" ]; then
+            echo "::error::the live generation ($live) is newer than this run's tree ($tree): refusing a rollback -- run the workflow again instead"
+            exit 1
+          fi
+          echo "live $live, this tree $tree: not a rollback"
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
         with:
           path: pub/tree
@@ -307,74 +342,51 @@ jobs:
       contents: read
     environment: aur
     steps:
-      # Each at its release tag, sparse, with the git index (aur-publish reads
-      # the submodule pins from it): the recipe and its README, KEYS, VERSION,
-      # the ci.yml the recipe gate's options are read from, and the file those
-      # options name (LibreAgent's --pin reads cmake/FetchQCBOR.cmake).
+      # Each whole at its release tag, shallow and without submodules: the
+      # gitlinks stay in the index, where the recipe gate reads the submodule
+      # pins, and every file the tagged ci.yml's recipe options name is there.
+      # No path list is kept here: one that missed a file would surface only
+      # at a real publish, as check-recipe calling the signed recipe red
+      # (rc 1), not as a fault of this checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: LibreSCRS/LibreMiddleware
           ref: ${{ needs.assemble.outputs.tag_lm }}
           path: sources/LibreMiddleware
-          sparse-checkout: |
-            /packaging/arch/
-            /KEYS
-            /VERSION
-            /.github/workflows/ci.yml
-            /cmake/FetchQCBOR.cmake
-          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          submodules: false
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: LibreSCRS/LibreAgent
           ref: ${{ needs.assemble.outputs.tag_la }}
           path: sources/LibreAgent
-          sparse-checkout: |
-            /packaging/arch/
-            /KEYS
-            /VERSION
-            /.github/workflows/ci.yml
-            /cmake/FetchQCBOR.cmake
-          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          submodules: false
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: LibreSCRS/LibreLinux
           ref: ${{ needs.assemble.outputs.tag_ll }}
           path: sources/LibreLinux
-          sparse-checkout: |
-            /packaging/arch/
-            /KEYS
-            /VERSION
-            /.github/workflows/ci.yml
-            /cmake/FetchQCBOR.cmake
-          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          submodules: false
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: LibreSCRS/LibreCelik
           ref: ${{ needs.assemble.outputs.tag_lc }}
           path: sources/LibreCelik
-          sparse-checkout: |
-            /packaging/arch/
-            /KEYS
-            /VERSION
-            /.github/workflows/ci.yml
-            /cmake/FetchQCBOR.cmake
-          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          submodules: false
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: LibreSCRS/LibreKDE
           ref: ${{ needs.assemble.outputs.tag_lk }}
           path: sources/LibreKDE
-          sparse-checkout: |
-            /packaging/arch/
-            /KEYS
-            /VERSION
-            /.github/workflows/ci.yml
-            /cmake/FetchQCBOR.cmake
-          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          submodules: false
           persist-credentials: false
       - name: Publish the recipes
         uses: LibreSCRS/ci/actions/pkg-repo@b9848b4990ae046072497f10d6f5b2bfdfa45470
