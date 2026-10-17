@@ -3,7 +3,7 @@
 Notable user-visible changes per release. Format follows
 [Keep a Changelog](https://keepachangelog.com/) loosely.
 
-## [Unreleased] — 1.0.0
+## [1.0.0] — 2026-10-17
 
 ### Added
 
