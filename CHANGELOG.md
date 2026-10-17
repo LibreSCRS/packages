@@ -17,6 +17,7 @@ Notable user-visible changes per release. Format follows
   days after they were signed unless they are signed again.
 - **One short set of commands per distribution to start.** The commands the
   website shows for adding the repository and installing LibreCelik are kept
-  in this repository and tried, exactly as written, on every distribution
-  before each publication of the repository. On Arch Linux the packages come
-  from the AUR, after importing the release key.
+  in this repository and tried, exactly as written, on Debian 13, Ubuntu 26.04
+  LTS, Fedora 43 and 44 and openSUSE Tumbleweed before each publication of the
+  repository. On Arch Linux the packages come from the AUR, after importing
+  the release key; those commands are not run before publication.

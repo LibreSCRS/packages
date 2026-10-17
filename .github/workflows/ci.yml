@@ -25,8 +25,9 @@ jobs:
 
       - name: Shared gates
         # From one copy in LibreSCRS/ci: every job bounded and every shared
-        # action at one commit, and the CHANGELOG agreeing with VERSION. Only
-        # the lockstep arm of the version check: there is no CMake tree here.
+        # action at one commit, and the CHANGELOG agreeing with VERSION. The
+        # rpm spec's Version is held to VERSION by the release preflight, which
+        # every push touching the packaging rehearses.
         uses: LibreSCRS/ci/actions/gates@b9848b4990ae046072497f10d6f5b2bfdfa45470
         with:
           gates: check-workflows check-version-lockstep

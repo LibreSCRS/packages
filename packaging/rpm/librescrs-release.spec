@@ -30,16 +30,7 @@ metadata and every package are checked against that certificate.
 %setup -q
 
 %build
-# The certificate is not committed. The release workflow places the one for
-# its mode at packaging/keyring-cert.asc before the build -- the public
-# rehearsal key in a rehearsal, the package-signing key on a tag -- so this
-# recipe names no fingerprint and builds either. Exactly one public key block;
-# a secret key is never an input.
-test -s packaging/keyring-cert.asc
-if grep -q 'PRIVATE KEY BLOCK' packaging/keyring-cert.asc; then
-    echo 'packaging/keyring-cert.asc holds a secret key' >&2; exit 1
-fi
-test "$(grep -c '^-----BEGIN PGP PUBLIC KEY BLOCK-----$' packaging/keyring-cert.asc)" = 1
+# packaging/keyring-cert.asc is placed and checked by packaging/ci/prepare-source.sh.
 
 # No %%post importing the key: rpm cannot take its transaction lock from a
 # scriptlet, and the import fails while the transaction still reports
@@ -82,6 +73,10 @@ REPO
 
 %files
 %license LICENSE
+%if 0%{?suse_version}
+# No base package owns it on openSUSE.
+%dir %{_sysconfdir}/pki/rpm-gpg
+%endif
 %{_sysconfdir}/pki/rpm-gpg/RPM-GPG-KEY-librescrs
 %config(noreplace) %{repodir}/librescrs.repo
 

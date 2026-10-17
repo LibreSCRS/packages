@@ -5,10 +5,7 @@
 # 26.04 build names resolute. Any other image is refused rather than guessed.
 CODENAME := $(shell . /etc/os-release && echo "$$VERSION_CODENAME")
 
-# The certificate is not committed. The release workflow places the one for
-# its mode at packaging/keyring-cert.asc before the build -- the public
-# rehearsal key in a rehearsal, the package-signing key on a tag -- so this
-# recipe names no fingerprint and builds either.
+# Placed and checked by packaging/ci/prepare-source.sh; never committed.
 CERT := packaging/keyring-cert.asc
 
 %:
@@ -20,10 +17,6 @@ override_dh_auto_build:
 	sed 's/@CODENAME@/$(CODENAME)/' debian/librescrs.sources.in >debian/librescrs.sources
 	# Signed-By names a .pgp file, which apt reads as a binary keyring: the
 	# armor is taken off here, and nothing else about the certificate changes.
-	# Exactly one public key block; a secret key is never an input.
-	test -s $(CERT)
-	! grep -q 'PRIVATE KEY BLOCK' $(CERT)
-	test "$$(grep -c '^-----BEGIN PGP PUBLIC KEY BLOCK-----$$' $(CERT))" = 1
 	sed -n '/^-----BEGIN PGP PUBLIC KEY BLOCK-----$$/,/^-----END PGP PUBLIC KEY BLOCK-----$$/p' $(CERT) \
 	  | sed '1,/^[[:space:]]*$$/d' | grep -v -e '^=' -e '^-----END ' | base64 -d >debian/librescrs-archive-keyring.pgp
 	# The first packet is a public key (old format tag 6, or new format).

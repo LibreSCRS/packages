@@ -1,0 +1,2 @@
+# <kind> <path>
+rpm-spec-version   packaging/rpm/librescrs-release.spec

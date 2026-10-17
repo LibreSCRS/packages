@@ -42,10 +42,10 @@ concurrency:
 jobs:
   preflight:
     # Everything a release can be refused for, before anything is built or
-    # signed: the mode against the ref, the tag's signature, and the CHANGELOG
-    # against VERSION. Only the lockstep arm: this repository has its own
-    # version, outside the code repositories' lockstep, and no CMake tree for
-    # the other arms to read.
+    # signed: the mode against the ref, the tag's signature, the CHANGELOG
+    # against VERSION, and the rpm spec's Version against VERSION (a release
+    # package that kept its old version would never reach an rpm client).
+    # No floors or stamp arm: there is no CMake tree here.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -63,7 +63,7 @@ jobs:
         uses: LibreSCRS/ci/actions/release-preflight@b9848b4990ae046072497f10d6f5b2bfdfa45470
         with:
           mode: ${{ inputs.mode || (github.ref_type == 'tag' && 'publish' || 'rehearse') }}
-          version-arms: lockstep
+          version-arms: lockstep,surfaces
 
   packages:
     # One keyring package per slug, each built in that distribution's own
@@ -77,6 +77,12 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    # The certificate the packages carry is the one the run's key set signs
+    # with; packaging/ci/prepare-source.sh maps the mode to it, from the pinned
+    # LibreSCRS/ci below.
+    env:
+      KEYRING_MODE: ${{ needs.preflight.outputs.mode }}
+      KEYRING_KEYS_DIR: ${{ github.workspace }}/.ci/keys
     strategy:
       fail-fast: false
       matrix:
@@ -94,26 +100,6 @@ jobs:
           path: .ci
           persist-credentials: false
 
-      # The certificate the packages carry is the one the run's key set signs
-      # with: the public rehearsal key in a rehearsal, so the publisher's
-      # rehearsal installs them exactly as a user would; the package-signing
-      # key on a tag. It is never committed here and no fingerprint is named,
-      # so the one recipe builds both; the build stages it from this path.
-      - name: Keyring certificate for this mode
-        env:
-          MODE: ${{ needs.preflight.outputs.mode }}
-        run: |
-          set -euo pipefail
-          case "$MODE" in
-            publish) keyset=package-signing ;;
-            rehearse) keyset=rehearsal ;;
-            *) echo "::error::mode '$MODE'"; exit 1 ;;
-          esac
-          cert=".ci/keys/$keyset.asc"
-          [ -s "$cert" ] || { echo "::error::no $cert in the pinned LibreSCRS/ci"; exit 1; }
-          command cp -f "$cert" packaging/keyring-cert.asc
-          echo "keyring certificate: $keyset"
-
       # No upstream LibreSCRS package: nothing here links against one, so a tag
       # and a rehearsal build the same way.
       - name: Build the packages for ${{ matrix.slug }}
@@ -124,7 +110,10 @@ jobs:
           upstream: source
 
       # No pkg-verify: a keyring package has no ELF file; the publisher's probe
-      # installs it as a user would before anything reaches a user.
+      # installs it as a user would before anything reaches a user. That also
+      # skips lintian and rpmlint, which pkg-verify runs: what they would judge
+      # here is two configuration files and a certificate, and the probe judges
+      # those by using them.
 
       # Named <package>.<slug>.<deb|rpm> already, debug packages refused: the
       # asset set is decided by the builder, not by a rename here.
