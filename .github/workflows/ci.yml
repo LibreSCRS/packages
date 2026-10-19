@@ -28,6 +28,6 @@ jobs:
         # action at one commit, and the CHANGELOG agreeing with VERSION. The
         # rpm spec's Version is held to VERSION by the release preflight, which
         # every push touching the packaging rehearses.
-        uses: LibreSCRS/ci/actions/gates@b9848b4990ae046072497f10d6f5b2bfdfa45470
+        uses: LibreSCRS/ci/actions/gates@fb2e836935d9dad2ebaaac6e082dad9ae67dd49a
         with:
           gates: check-workflows check-version-lockstep
