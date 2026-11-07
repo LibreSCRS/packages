@@ -100,7 +100,7 @@ jobs:
           cosign-release: v3.0.6
 
       - name: Releases, verified
-        uses: LibreSCRS/ci/actions/pkg-repo@2d5d8c63e77bf90a9ca5b0354028b9396093bd79
+        uses: LibreSCRS/ci/actions/pkg-repo@298d83a67de5e7349aad840ad9f8d972bb9168fb
         env:
           GH_TOKEN: ${{ github.token }}
           RUNS: ${{ inputs.runs }}
@@ -111,7 +111,7 @@ jobs:
 
       - name: Previous generation
         if: steps.m.outputs.mode == 'publish'
-        uses: LibreSCRS/ci/actions/pkg-repo@2d5d8c63e77bf90a9ca5b0354028b9396093bd79
+        uses: LibreSCRS/ci/actions/pkg-repo@298d83a67de5e7349aad840ad9f8d972bb9168fb
         with:
           step: fetch-prev
           mode: ${{ steps.m.outputs.mode }}
@@ -130,7 +130,7 @@ jobs:
 
       - name: Assemble
         id: a
-        uses: LibreSCRS/ci/actions/pkg-repo@2d5d8c63e77bf90a9ca5b0354028b9396093bd79
+        uses: LibreSCRS/ci/actions/pkg-repo@298d83a67de5e7349aad840ad9f8d972bb9168fb
         with:
           step: assemble
           mode: ${{ steps.m.outputs.mode }}
@@ -200,14 +200,14 @@ jobs:
           name: tree-unsigned
           path: pub/tree
       - name: Sign the indexes
-        uses: LibreSCRS/ci/actions/pkg-repo@2d5d8c63e77bf90a9ca5b0354028b9396093bd79
+        uses: LibreSCRS/ci/actions/pkg-repo@298d83a67de5e7349aad840ad9f8d972bb9168fb
         with:
           step: sign-index
           mode: ${{ needs.assemble.outputs.mode }}
           tree: pub/tree
           key: ${{ needs.assemble.outputs.mode == 'publish' && secrets.INDEX_SIGNING_KEY || '' }}
       - name: Verify the signed tree
-        uses: LibreSCRS/ci/actions/pkg-repo@2d5d8c63e77bf90a9ca5b0354028b9396093bd79
+        uses: LibreSCRS/ci/actions/pkg-repo@298d83a67de5e7349aad840ad9f8d972bb9168fb
         with:
           step: verify-tree
           mode: ${{ needs.assemble.outputs.mode }}
@@ -269,7 +269,7 @@ jobs:
             echo "rehearse: p1p2 forge; upgrade and key skipped: the published previous generation is under the real key"
           fi
       - name: Probe ${{ matrix.slug }}
-        uses: LibreSCRS/ci/actions/pkg-repo@2d5d8c63e77bf90a9ca5b0354028b9396093bd79
+        uses: LibreSCRS/ci/actions/pkg-repo@298d83a67de5e7349aad840ad9f8d972bb9168fb
         with:
           step: probe
           tree: pub/tree
@@ -389,7 +389,7 @@ jobs:
           submodules: false
           persist-credentials: false
       - name: Publish the recipes
-        uses: LibreSCRS/ci/actions/pkg-repo@2d5d8c63e77bf90a9ca5b0354028b9396093bd79
+        uses: LibreSCRS/ci/actions/pkg-repo@298d83a67de5e7349aad840ad9f8d972bb9168fb
         with:
           step: aur
           sources: sources
@@ -407,7 +407,7 @@ jobs:
       actions: write
     steps:
       - name: Keep the schedule enabled
-        uses: LibreSCRS/ci/actions/pkg-repo@2d5d8c63e77bf90a9ca5b0354028b9396093bd79
+        uses: LibreSCRS/ci/actions/pkg-repo@298d83a67de5e7349aad840ad9f8d972bb9168fb
         env:
           GH_TOKEN: ${{ github.token }}
         with:
